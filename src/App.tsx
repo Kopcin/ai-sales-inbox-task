@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { api } from "./api";
+import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { api, type Extraction } from "./api";
 import type { Lead, Message } from "./types";
 
 const path = window.location.pathname.replace(/\/+$/, "") || "/inbox";
@@ -73,6 +73,11 @@ function MessageRow({ message }: { message: Message }) {
 function DetailPage({ messageId }: { messageId: string }) {
   const [message, setMessage] = useState<Message | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [fields, setFields] = useState({ product: "", quantity: "", material: "", budget: "" });
+  const [extracting, setExtracting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -84,6 +89,50 @@ function DetailPage({ messageId }: { messageId: string }) {
 
   if (state === "loading") return <main className="page-container"><StateMessage>Loading message…</StateMessage></main>;
   if (state === "error" || !message) return <main className="page-container"><StateMessage>Message not found.</StateMessage></main>;
+
+  function applyExtraction(extraction: Extraction) {
+    setFields((current) => ({
+      product: current.product || extraction.product || "",
+      quantity: current.quantity || (extraction.quantity == null ? "" : String(extraction.quantity)),
+      material: current.material || extraction.material || "",
+      budget: current.budget || (extraction.budget == null ? "" : String(extraction.budget)),
+    }));
+  }
+
+  async function handleExtract() {
+    setExtracting(true);
+    setFormError("");
+    try {
+      applyExtraction(await api.extract(messageId));
+    } catch {
+      setFormError("Extraction failed. You can fill in the fields manually.");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      await api.createLead({
+        sourceMessageId: messageId,
+        product: fields.product,
+        quantity: Number(fields.quantity),
+        material: fields.material,
+        budget: fields.budget === "" ? null : Number(fields.budget),
+      });
+      setSaved(true);
+    } catch {
+      setFormError("Could not save the lead. Check the values and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const updateField = (field: keyof typeof fields) => (event: ChangeEvent<HTMLInputElement>) =>
+    setFields((current) => ({ ...current, [field]: event.target.value }));
 
   return (
     <main className="page-container detail-layout">
@@ -98,9 +147,29 @@ function DetailPage({ messageId }: { messageId: string }) {
           </dl>
           <div className="message-body">{message.body}</div>
         </article>
-        <aside className="panel placeholder-panel" aria-label="Lead extraction status">
+        <aside className="panel extraction-panel" aria-label="Lead extraction">
           <p className="eyebrow">Next step</p>
-          <p className="placeholder" role="status">Lead extraction not implemented yet.</p>
+          <button className="primary-button" type="button" onClick={handleExtract} disabled={extracting || saving || saved}>{
+            extracting ? "Extracting…" : "Extract with AI"
+          }</button>
+          <form className="lead-form" onSubmit={handleSave}>
+            {(["product", "quantity", "material", "budget"] as const).map((field) => (
+              <label key={field}>{field.charAt(0).toUpperCase() + field.slice(1)}
+                <input
+                  value={fields[field]}
+                  onChange={updateField(field)}
+                  type={field === "quantity" || field === "budget" ? "number" : "text"}
+                  min={field === "quantity" ? 1 : field === "budget" ? 0 : undefined}
+                  step={field === "quantity" ? 1 : field === "budget" ? "any" : undefined}
+                  required={field === "product" || field === "quantity"}
+                  disabled={saving || saved}
+                />
+              </label>
+            ))}
+            {formError && <p className="form-error" role="alert">{formError}</p>}
+            {saved ? <p className="success-message" role="status">Lead saved. <a href="/pipeline">View pipeline</a></p> :
+              <button className="primary-button" type="submit" disabled={saving || extracting}>{saving ? "Saving…" : "Save lead"}</button>}
+          </form>
         </aside>
       </section>
     </main>
@@ -133,7 +202,22 @@ function PipelinePage() {
 }
 
 function LeadCard({ lead }: { lead: Lead }) {
-  return <li className="lead-card"><div><h3>{lead.product}</h3><p>{lead.quantity} unit{lead.quantity === 1 ? "" : "s"}{lead.material ? ` · ${lead.material}` : ""}</p><span className="muted">{lead.status} · {lead.budget === null ? "Budget unknown" : `${lead.budget}`}</span></div></li>;
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState(lead.status);
+  async function markContacted() {
+    setSaving(true);
+    setError("");
+    try {
+      await api.markContacted(lead.id);
+      setStatus("CONTACTED");
+    } catch {
+      setError("Could not update lead status.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <li className="lead-card"><div><h3>{lead.product}</h3><p>{lead.quantity} unit{lead.quantity === 1 ? "" : "s"}{lead.material ? ` · ${lead.material}` : ""}</p><span className="muted">{status} · {lead.budget === null ? "Budget unknown" : `${lead.budget}`}</span>{status === "NEW" && <button className="secondary-button" type="button" onClick={markContacted} disabled={saving}>{saving ? "Saving…" : "Mark as contacted"}</button>}{error && <p className="form-error" role="alert">{error}</p>}</div></li>;
 }
 
 export function App() {

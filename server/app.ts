@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractForMessage, extractRequestSchema } from "./ai.js";
 import { prisma } from "./db.js";
+import { z } from "zod";
 
 const app = express();
 const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "client");
@@ -35,6 +36,23 @@ function serializeMessage(message: { id: string; senderName: string; senderEmail
   };
 }
 
+const leadCreateSchema = z.object({
+  sourceMessageId: z.string().trim().min(1),
+  product: z.string().trim().min(1),
+  quantity: z.number().int().positive(),
+  material: z.union([z.string(), z.null()]).optional().transform((value) => {
+    if (value === undefined || value === null) return value ?? null;
+    return value.trim();
+  }),
+  budget: z.number().finite().nonnegative().nullable().optional(),
+}).strict();
+
+const leadStatusSchema = z.object({ status: z.literal("CONTACTED") }).strict();
+
+function serializeLead(lead: { id: string; sourceMessageId: string; product: string; quantity: number; material: string | null; budget: number | null; status: string; createdAt: Date }) {
+  return { ...lead, createdAt: lead.createdAt.toISOString() };
+}
+
 async function handleMessages(_request: Request, response: Response, next: NextFunction) {
   try {
     const records = await prisma.message.findMany({
@@ -64,7 +82,66 @@ app.get("/api/messages/:messageId", async (request, response, next) => {
 app.get("/api/leads", async (_request, response, next) => {
   try {
     const leads = await prisma.lead.findMany({ orderBy: { createdAt: "asc" } });
-    response.json(leads.map((lead) => ({ ...lead, createdAt: lead.createdAt.toISOString() })));
+    response.json(leads.map(serializeLead));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/leads", async (request, response, next) => {
+  try {
+    const parsed = leadCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "invalid_lead", details: parsed.error.flatten() });
+      return;
+    }
+
+    const sourceMessage = await prisma.message.findUnique({ where: { id: parsed.data.sourceMessageId } });
+    if (!sourceMessage) {
+      response.status(404).json({ error: "message_not_found" });
+      return;
+    }
+
+    const lead = await prisma.lead.create({
+      data: {
+        id: crypto.randomUUID(),
+        sourceMessageId: parsed.data.sourceMessageId,
+        product: parsed.data.product,
+        quantity: parsed.data.quantity,
+        material: parsed.data.material ?? null,
+        budget: parsed.data.budget ?? null,
+        status: "NEW",
+      },
+    });
+    response.status(201).json(serializeLead(lead));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/leads/:leadId/status", async (request, response, next) => {
+  try {
+    const parsed = leadStatusSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "invalid_status", details: parsed.error.flatten() });
+      return;
+    }
+
+    const lead = await prisma.lead.findUnique({ where: { id: request.params.leadId } });
+    if (!lead) {
+      response.status(404).json({ error: "lead_not_found" });
+      return;
+    }
+    if (lead.status !== "NEW") {
+      response.status(409).json({ error: "invalid_status_transition" });
+      return;
+    }
+
+    const updated = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { status: parsed.data.status },
+    });
+    response.json(serializeLead(updated));
   } catch (error) {
     next(error);
   }
