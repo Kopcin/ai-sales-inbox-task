@@ -59,8 +59,19 @@ h3 { font-size: .94rem; margin: 0 0 3px; }
 .message-facts div { display: flex; font-size: .86rem; gap: 18px; padding: 5px 0; }
 .message-facts dt { color: #718078; min-width: 74px; }
 .message-facts dd { margin: 0; }
-.placeholder-panel { padding: 24px; }
+.placeholder-panel, .extraction-panel { padding: 24px; }
 .placeholder { color: #718078; font-size: .95rem; margin: 18px 0 0; }
+.primary-button, .secondary-button { border: 0; border-radius: 8px; cursor: pointer; font-weight: 700; padding: 10px 14px; }
+.primary-button { background: #0c8f71; color: #fff; width: 100%; }
+.secondary-button { background: #e0f2e9; color: #17634d; margin-top: 12px; }
+.primary-button:disabled, .secondary-button:disabled { cursor: wait; opacity: .6; }
+.lead-form { display: grid; gap: 13px; margin-top: 20px; }
+.lead-form label { color: #53635a; display: grid; font-size: .8rem; font-weight: 700; gap: 5px; }
+.lead-form input { border: 1px solid #cbd9d0; border-radius: 7px; color: #17211f; padding: 9px 10px; width: 100%; }
+.lead-form input:focus { border-color: #0c8f71; outline: 2px solid #bce5d6; }
+.form-error { color: #b42318; font-size: .8rem; margin: 0; }
+.success-message { color: #17634d; font-size: .85rem; margin: 0; }
+.success-message a { font-weight: 700; text-decoration: underline; }
 .lead-list { list-style: none; margin: 0; padding: 0; }
 .lead-list .lead-card { border: 0; border-bottom: 1px solid #e9eeea; border-radius: 0; margin: 0; padding: 20px 24px; }
 .lead-list .lead-card:last-child { border-bottom: 0; }
