@@ -115,15 +115,29 @@ function DetailPage({ messageId }: { messageId: string }) {
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const quantity = Number(fields.quantity);
+    const budget = fields.budget === "" ? null : Number(fields.budget);
+    if (!fields.product.trim()) {
+      setFormError("Product is required.");
+      return;
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setFormError("Quantity must be a positive whole number.");
+      return;
+    }
+    if (budget !== null && (!Number.isFinite(budget) || budget < 0)) {
+      setFormError("Budget must be a non-negative number.");
+      return;
+    }
     setSaving(true);
     setFormError("");
     try {
       await api.createLead({
         sourceMessageId: messageId,
-        product: fields.product,
-        quantity: Number(fields.quantity),
+        product: fields.product.trim(),
+        quantity,
         material: fields.material,
-        budget: fields.budget === "" ? null : Number(fields.budget),
+        budget,
       });
       setSaved(true);
     } catch {
@@ -154,7 +168,7 @@ function DetailPage({ messageId }: { messageId: string }) {
           <button className="primary-button" type="button" onClick={handleExtract} disabled={extracting || saving || saved}>{
             extracting ? "Extracting…" : "Extract with AI"
           }</button>
-          <form className="lead-form" onSubmit={handleSave}>
+          <form className="lead-form" onSubmit={handleSave} noValidate>
             {(["product", "quantity", "material", "budget"] as const).map((field) => (
               <label key={field}>{field.charAt(0).toUpperCase() + field.slice(1)}
                 <input
